@@ -6,8 +6,6 @@ import sys
 from functools import wraps
 
 import requests
-from github import Github
-
 
 user_agents_file_name = 'user-agents.json'
 user_agents_file_path = os.path.join(
@@ -16,7 +14,7 @@ user_agents_file_path = os.path.join(
 _saved_user_agents = None
 
 
-def json_dump(obj):
+def json_dump(obj) -> str:
     return json.dumps(obj, indent=2).strip() + '\n'
 
 
@@ -48,18 +46,20 @@ def requests_get(url, params=None):
     return response
 
 
-def get_saved_user_agents():
+def get_saved_user_agents() -> list[str]:
     global _saved_user_agents
 
     if _saved_user_agents is None:
-        with open(user_agents_file_path, 'r') as f:
+        with open(user_agents_file_path) as f:
             _saved_user_agents = json.load(f)
+        assert isinstance(_saved_user_agents, list)
+        assert _saved_user_agents is not None
 
     return _saved_user_agents
 
 
 @with_cli_status('Getting Chrome user agents')
-def generate_chrome_user_agents():
+def generate_chrome_user_agents() -> list[str]:
     user_agents = []
     platform_channels = (
         ('Mac', ('Stable', 'Extended'), 'Macintosh; Intel Mac OS X 10_15_7'),
@@ -88,7 +88,7 @@ def generate_chrome_user_agents():
 
 
 @with_cli_status('Getting Firefox user agents')
-def generate_firefox_user_agents():
+def generate_firefox_user_agents() -> list[str]:
     user_agents = []
     ua_platforms = (
         'Macintosh; Intel Mac OS X 10.15',
@@ -113,7 +113,7 @@ def generate_firefox_user_agents():
 
 
 @with_cli_status('Getting Safari user agents')
-def generate_safari_user_agents():
+def generate_safari_user_agents() -> list[str]:
     # XXX: these are not public APIs so I'm trying two different sources
     # to reduce the chance of breakage
     user_agents = []
@@ -156,18 +156,20 @@ def generate_safari_user_agents():
 
 
 @with_cli_status('Getting Edge user agents')
-def generate_edge_user_agents():
+def generate_edge_user_agents() -> list[str]:
     user_agents = []
     response = requests_get(
-        'https://raw.githubusercontent.com/MicrosoftDocs/Edge-Enterprise/refs/heads/public'
-        '/edgeenterprise/microsoft-edge-relnote-stable-channel.md')
+        'https://edgeupdates.microsoft.com/api/products?view=enterprise')
+    data = response.json()
     versions = set()
-    for line in response.text.splitlines():
-        match = re.match(
-            r'(?i)^#{2,} +version +([0-9]+)(\.[0-9]+)+ *: *[a-z]+ +[0-9]{1,2} *, *[0-9]{4}', line)
-        if match is None:
+    releases = next(r for r in response if r["Product"] == "Stable")["Releases"]
+    for rel in releases:
+        platform = rel["Platform"]
+        arch = rel["Architecture"]
+        if platform != "Windows" or arch != "x64":
             continue
-        versions.add(int(match[1]))
+        match = re.search(r"([0-9]+)(?:\.[0-9]+)*", rel["ProductVersion"])
+        versions.add(match[1])
     versions = sorted(versions)
     version = versions[-1]
     user_agents.append(
@@ -176,28 +178,17 @@ def generate_edge_user_agents():
     return user_agents
 
 
-def get_latest_user_agents():
+def get_latest_user_agents() -> list[str]:
     user_agents = []
     user_agents.extend(generate_chrome_user_agents())
     user_agents.extend(generate_firefox_user_agents())
     user_agents.extend(generate_safari_user_agents())
-    user_agents.extend(generate_edge_user_agents())
+    try:
+        user_agents.extend(generate_edge_user_agents())
+    except Exception as e:
+        print(f'Error generating Edge user agents: {e}')
+        pass
     return user_agents
-
-
-@with_cli_status('Updating files on GitHub')
-def update_files_on_github(new_user_agents_json):
-    gh = Github(os.environ['GITHUB_TOKEN'])
-    repo = gh.get_repo(os.environ['GITHUB_REPOSITORY'])
-    for branch in ('main', 'gh-pages'):
-        f = repo.get_contents(user_agents_file_name, ref=branch)
-        repo.update_file(
-            f.path,
-            message=f'Update {user_agents_file_name} on {branch} branch',
-            content=new_user_agents_json,
-            sha=f.sha,
-            branch=branch,
-        )
 
 
 if __name__ == '__main__':
@@ -212,4 +203,9 @@ if __name__ == '__main__':
     assert len(new_user_agents) >= 7
 
     if old_user_agents_json != new_user_agents_json:
-        update_files_on_github(new_user_agents_json)
+        print('Writing updated user agents to file...')
+        with open(user_agents_file_path, 'w') as f:
+            f.write(new_user_agents_json)
+        print('Done!')
+    else:
+        print('No changes detected.')
