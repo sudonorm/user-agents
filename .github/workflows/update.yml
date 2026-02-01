@@ -4,18 +4,35 @@ on:
     branches:
       - main
   schedule:
-    - cron:  '0 0 * * *'
+    - cron: "0 0 * * *"
 jobs:
   build:
     name: Update latest user agents
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
+      - uses: actions/checkout@v4
         with:
-          python-version: '3.9.x'
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - run: python --version
       - run: pip install -r requirements.txt
       - run: python update.py
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are changes to commit
+          if git diff --quiet user-agents.json; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          # Commit and push to main
+          git add user-agents.json
+          git commit -m "Update user-agents.json"
+          git push origin main
