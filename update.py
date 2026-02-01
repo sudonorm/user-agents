@@ -206,6 +206,6 @@ if __name__ == '__main__':
         print('Writing updated user agents to file...')
         with open(user_agents_file_path, 'w') as f:
             f.write(new_user_agents_json)
-        print('Done!')
+            print('File written successfully!')
     else:
         print('No changes detected.')
