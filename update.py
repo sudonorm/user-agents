@@ -162,7 +162,7 @@ def generate_edge_user_agents() -> list[str]:
         'https://edgeupdates.microsoft.com/api/products?view=enterprise')
     data = response.json()
     versions = set()
-    releases = next(r for r in response if r["Product"] == "Stable")["Releases"]
+    releases = next(r for r in data if r["Product"] == "Stable")["Releases"]
     for rel in releases:
         platform = rel["Platform"]
         arch = rel["Architecture"]
